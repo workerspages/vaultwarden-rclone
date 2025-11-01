@@ -22,39 +22,44 @@ fi
 
 RCLONE_REMOTE="${RCLONE_REMOTE#0}"
 
-# Telegram 失败通知（添加 JSON 转义，确保特殊字符安全）
+# Telegram MarkdownV2安全转义
+escape_markdown_v2() {
+  local text="$1"
+  text="${text//\\/\\\\}"
+  text="${text//_/\\_}"
+  text="${text//*/\\*}"
+  text="${text//[/\\[}"
+  text="${text//]/\\]}"
+  text="${text//(/\\(}"
+  text="${text//)/\\)}"
+  text="${text//~/\\~}"
+  text="${text//>/\\>}"
+  text="${text//\`/\\\`}"
+  text="${text//#/\\#}"
+  text="${text//\+/\\+}"
+  text="${text//-/\\-}"
+  text="${text//= /\\=}"
+  text="${text//|/\\|}"
+  text="${text//{/\\{}"
+  text="${text//}/\\}}"
+  text="${text//./\\.}"
+  text="${text//!/\\!}"
+  return_text="$text"
+  echo "$return_text"
+}
+
 send_telegram_error() {
-  local error_msg="$1"
-  local timestamp=$(date '+%Y-%m-%d %H:%M:%S %Z')
-  
-  # 转义 error_msg 中的双引号为 JSON 安全
-  error_msg=$(echo "${error_msg}" | sed 's/"/\\"/g')
-  
-  local message
-  message=$(printf '%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n' \
-    "<b>🚨 Vaultwarden 备份失败</b>" \
-    "" \
-    "<b>❌ 错误详情</b>" \
-    "<code>${error_msg}</code>" \
-    "" \
-    "<b>⏰ 发生时间</b>" \
-    "${timestamp}" \
-    "<b>💡 修复建议</b>" \
-    "请检查 RCLONE_REMOTE 配置，或联系管理员手动验证。"
-  )
-  
+  local error_msg
+  error_msg=$(escape_markdown_v2 "$1")
+  local timestamp
+  timestamp=$(date '+%Y-%m-%d %H:%M:%S %Z')
+  local message="🚨 *Vaultwarden 备份失败*\n\n❌ *错误详情*\n\`\`\`${error_msg}\`\`\`\n\n⏰ *发生时间*\n${timestamp}\n\n💡 *修复建议*\n请检查 RCLONE_REMOTE 配置，或联系管理员手动验证。"
   if [[ "${TELEGRAM_ENABLED}" == "true" && -n "${TELEGRAM_BOT_TOKEN}" && -n "${TELEGRAM_CHAT_ID}" ]]; then
-    echo "📤 发送错误通知到 Telegram..."
     local response
     response=$(curl -s -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
       -H "Content-Type: application/json" \
-      -d "{\"chat_id\":\"${TELEGRAM_CHAT_ID}\",\"text\":\"${message}\",\"parse_mode\":\"HTML\",\"disable_web_page_preview\":true}")
-    
-    # 可选调试：仅测试模式输出（生产注释掉）
-    if [[ "${TEST_MODE}" == "true" ]]; then
-      echo "🔍 错误 API 响应: ${response}"
-    fi
-    
+      -d "{\"chat_id\":\"${TELEGRAM_CHAT_ID}\",\"text\":\"${message}\",\"parse_mode\":\"MarkdownV2\"}")
+    if [[ "${TEST_MODE}" == "true" ]]; then echo "Telegram API Response: ${response}"; fi
     if echo "$response" | grep -q '"ok":true'; then
       echo "✅ 错误通知发送成功"
     else
@@ -65,38 +70,20 @@ send_telegram_error() {
   fi
 }
 
-# Telegram 成功通知（保持原样，无需转义）
 send_telegram_success() {
-  local archive_size="$1"
-  local timestamp=$(date '+%Y-%m-%d %H:%M:%S %Z')
-  
-  local message
-  message=$(printf '%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n' \
-    "<b>✅ Vaultwarden 备份成功</b>" \
-    "" \
-    "<b>📦 文件大小</b>" \
-    "<code>${archive_size}</code>" \
-    "" \
-    "<b>📅 完成时间</b>" \
-    "${timestamp}" \
-    "<b>☁️ 存储位置</b>" \
-    "${RCLONE_REMOTE}" \
-    "<b>🧹 清理状态</b>" \
-    "旧文件已自动删除（保留 ${BACKUP_RETAIN_DAYS} 天）。"
-  )
-  
+  local archive_size
+  archive_size=$(escape_markdown_v2 "$1")
+  local timestamp
+  timestamp=$(date '+%Y-%m-%d %H:%M:%S %Z')
+  local location
+  location=$(escape_markdown_v2 "${RCLONE_REMOTE}")
+  local message="✅ *Vaultwarden 备份成功*\n\n📦 *文件大小*\n\`\`\`${archive_size}\`\`\`\n\n📅 *完成时间*\n${timestamp}\n\n☁️ *存储位置*\n${location}\n\n🧹 *清理状态*\n旧文件已自动删除（保留 ${BACKUP_RETAIN_DAYS} 天）."
   if [[ "${TELEGRAM_ENABLED}" == "true" && -n "${TELEGRAM_BOT_TOKEN}" && -n "${TELEGRAM_CHAT_ID}" ]]; then
-    echo "📤 发送成功通知到 Telegram..."
     local response
     response=$(curl -s -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
       -H "Content-Type: application/json" \
-      -d "{\"chat_id\":\"${TELEGRAM_CHAT_ID}\",\"text\":\"${message}\",\"parse_mode\":\"HTML\",\"disable_web_page_preview\":true}")
-    
-    # 可选调试：仅测试模式输出（生产注释掉）
-    if [[ "${TEST_MODE}" == "true" ]]; then
-      echo "🔍 成功 API 响应: ${response}"
-    fi
-    
+      -d "{\"chat_id\":\"${TELEGRAM_CHAT_ID}\",\"text\":\"${message}\",\"parse_mode\":\"MarkdownV2\"}")
+    if [[ "${TEST_MODE}" == "true" ]]; then echo "Telegram API Response: ${response}"; fi
     if echo "$response" | grep -q '"ok":true'; then
       echo "✅ 成功通知发送成功"
     else
@@ -107,21 +94,18 @@ send_telegram_success() {
   fi
 }
 
-# 测试模式
 if [[ "${TEST_MODE}" == "true" ]]; then
-  echo "🧪 测试模式：发送示例通知..."
+  echo "🧪 测试模式：发送 Telegram 消息 ..."
   send_telegram_error "Test error with special chars: * & < > \" '"
   send_telegram_success "10.5 MB"
   exit 0
 fi
 
-# 检查 RCLONE_REMOTE
 if [[ -z "${RCLONE_REMOTE}" ]]; then
-  send_telegram_error "RCLONE_REMOTE 未设置；跳过备份。"
+  send_telegram_error "RCLONE_REMOTE 未设置，跳过备份。"
   exit 0
 fi
 
-# 创建备份
 ts="$(date -u +%Y%m%d-%H%M%S)"
 tmp_dir="$(mktemp -d)"
 archive="${tmp_dir}/${BACKUP_FILENAME_PREFIX}-${ts}.tar.${BACKUP_COMPRESSION}"
@@ -129,7 +113,7 @@ error_msg=""
 
 cd "${BACKUP_SRC}"
 
-echo "🔄 创建备份归档..."
+echo "🔄 创建备份归档 ..."
 case "${BACKUP_COMPRESSION}" in
   gz)  tar -czf "${archive}" . ;;
   zst) tar -I 'zstd -19 -T0' -cf "${archive}" . ;;
@@ -139,35 +123,29 @@ case "${BACKUP_COMPRESSION}" in
 esac
 
 archive_size=$(du -h "${archive}" | cut -f1)
-echo "✅ 备份归档创建完成: ${archive_size}"
+echo "✅ 备份归档完成: ${archive_size}"
 
-# 上传备份
-echo "📤 上传到 ${RCLONE_REMOTE}..."
+echo "📤 上传到 ${RCLONE_REMOTE} ..."
 if ! rclone copy "${archive}" "${RCLONE_REMOTE}" ${RCLONE_FLAGS}; then
-  error_msg="上传失败（网络或存储问题）。"
+  error_msg="Upload failed (network or storage issue)."
 else
   echo "✅ 上传成功"
 fi
 
-# 清理旧备份
 cleanup_error=""
 if [[ -z "${error_msg}" && "${BACKUP_RETAIN_DAYS}" -gt 0 ]]; then
-  echo "🧹 清理：删除超过 ${BACKUP_RETAIN_DAYS} 天的文件..."
-  
+  echo "🧹 清理：删除超过 ${BACKUP_RETAIN_DAYS} 天的备份 ..."
   if [[ "${CLEANUP_METHOD}" == "min-age" ]]; then
     if rclone delete "${RCLONE_REMOTE}" --min-age "${BACKUP_RETAIN_DAYS}d" --include "*.tar.*" -v 2>&1 | tee /tmp/rclone_delete.log; then
       echo "✅ 清理完成"
     else
-      echo "⚠️ rclone --min-age 失败。尝试 jq 清理..."
+      echo "⚠️ rclone --min-age 清理失败，尝试 jq ..."
       CLEANUP_METHOD="jq"
     fi
   fi
-  
   if [[ "${CLEANUP_METHOD}" == "jq" ]]; then
-    echo "🔧 使用 jq 清理（兼容 WebDAV）..."
     if command -v jq >/dev/null 2>&1; then
       cutoff_date=$(date -d "${BACKUP_RETAIN_DAYS} days ago" '+%Y%m%d')
-      
       if rclone lsjson "${RCLONE_REMOTE}" --files-only 2>/dev/null | jq -r ".[] | select(.Path | test(\"${BACKUP_FILENAME_PREFIX}.*\\\\.tar\\\\.${BACKUP_COMPRESSION}\$\")) | .Path" | while read -r file; do
         file_date=$(echo "$file" | grep -oE "[0-9]{8}" | head -1)
         if [[ -n "$file_date" && "$file_date" -lt "$cutoff_date" ]]; then
@@ -180,15 +158,13 @@ if [[ -z "${error_msg}" && "${BACKUP_RETAIN_DAYS}" -gt 0 ]]; then
         cleanup_error="jq 清理失败"
       fi
     else
-      cleanup_error="未找到 jq。请设置 BACKUP_RETAIN_DAYS=0 禁用清理。"
+      cleanup_error="未找到 jq，建议关闭清理或装 jq"
     fi
   fi
 fi
 
-# 清理临时目录
 rm -rf "${tmp_dir}"
 
-# 处理结果
 if [[ -n "${error_msg}" ]]; then
   send_telegram_error "${error_msg}"
   exit 1
@@ -197,6 +173,5 @@ elif [[ -n "${cleanup_error}" ]]; then
   exit 0
 fi
 
-# 成功完成
-echo "✨ 备份完成成功"
+echo "✨ 备份完成"
 send_telegram_success "${archive_size}"
