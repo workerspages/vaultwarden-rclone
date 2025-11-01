@@ -22,45 +22,38 @@ fi
 
 RCLONE_REMOTE="${RCLONE_REMOTE#0}"
 
-# Telegram 发送函数（纯文本模式，无格式，避免所有解析错误）
+# Telegram 发送函数（纯文本，无格式风险）
 send_telegram_message() {
   local text="$1"
-  local type="$2"  # "error" or "success"
+  local type="$2"
   
-  echo "🔍 调试: TELEGRAM_ENABLED=${TELEGRAM_ENABLED}, TOKEN 前10: ${TELEGRAM_BOT_TOKEN:0:10}..., CHAT_ID=${TELEGRAM_CHAT_ID}"
+  echo "🔍 调试: TELEGRAM_ENABLED=${TELEGRAM_ENABLED}, TOKEN前10=${TELEGRAM_BOT_TOKEN:0:10}..., CHAT_ID=${TELEGRAM_CHAT_ID}"
   
   if [[ "${TELEGRAM_ENABLED}" != "true" || -z "${TELEGRAM_BOT_TOKEN}" || -z "${TELEGRAM_CHAT_ID}" ]]; then
     echo "⚠️ Telegram 未启用或缺少凭证。跳过${type}通知。"
     return 1
   fi
   
-  # 网络测试：ping Telegram API
+  # 网络测试
   if ! ping -c 1 api.telegram.org >/dev/null 2>&1; then
-    echo "⚠️ 网络问题：无法 ping api.telegram.org。检查 DNS/防火墙。"
+    echo "⚠️ 网络无法访问 api.telegram.org。"
     return 1
   fi
   
-  echo "📤 发送${type}通知到 Telegram (纯文本模式)..."
-  
-  # 简单 Bash JSON（无 jq 依赖）
+  echo "📤 发送${type}通知..."
   local json_data="{\"chat_id\":\"${TELEGRAM_CHAT_ID}\",\"text\":\"${text}\",\"disable_web_page_preview\":true}"
-  
-  # 输出 curl 命令（调试用）
-  echo "🔍 Curl 命令: curl -s -X POST 'https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage' -H 'Content-Type: application/json' -d '${json_data}'"
-  
-  local response
-  response=$(curl -s -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
+  local response=$(curl -s -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
     -H "Content-Type: application/json" \
     -d "$json_data" \
-    -w "\nHTTP Code: %{http_code}")
+    -w "\nHTTP: %{http_code}")
   
-  echo "Telegram API Response (${type}): ${response}"
+  echo "API 响应 (${type}): ${response}"
   
   if echo "$response" | grep -q '"ok":true'; then
     echo "✅ ${type}通知发送成功"
     return 0
   else
-    echo "⚠️ ${type}通知失败。常见原因：TOKEN 无效 (401)、Bot 未加频道 (403)、消息太长 (>4096 字符)。"
+    echo "⚠️ ${type}通知失败。检查 TOKEN/权限/网络。"
     return 1
   fi
 }
@@ -68,7 +61,6 @@ send_telegram_message() {
 send_telegram_error() {
   local error_msg="$1"
   local timestamp=$(date '+%Y-%m-%d %H:%M:%S %Z')
-  
   local message="🚨 Vaultwarden 备份失败
 
 ❌ 错误详情: ${error_msg}
@@ -76,14 +68,12 @@ send_telegram_error() {
 ⏰ 发生时间: ${timestamp}
 
 💡 修复建议: 请检查 RCLONE_REMOTE 配置，或联系管理员手动验证。"
-  
   send_telegram_message "$message" "错误"
 }
 
 send_telegram_success() {
   local archive_size="$1"
   local timestamp=$(date '+%Y-%m-%d %H:%M:%S %Z')
-  
   local message="✅ Vaultwarden 备份成功
 
 📦 文件大小: ${archive_size}
@@ -93,28 +83,24 @@ send_telegram_success() {
 ☁️ 存储位置: ${RCLONE_REMOTE}
 
 🧹 清理状态: 旧文件已自动删除（保留 ${BACKUP_RETAIN_DAYS} 天）。"
-  
   send_telegram_message "$message" "成功"
 }
 
-# 测试模式（添加手动 curl 测试）
+# 测试模式（先基础测试）
 if [[ "${TEST_MODE}" == "true" ]]; then
-  echo "🧪 测试模式：先手动测试基础 curl..."
-  
-  # 手动简单测试（纯文本，无变量）
-  local test_response
-  test_response=$(curl -s -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
+  echo "🧪 测试模式：基础 curl 测试..."
+  local test_response=$(curl -s -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
     -H "Content-Type: application/json" \
-    -d '{"chat_id":"'"${TELEGRAM_CHAT_ID}"'","text":"🧪 Docker 备份脚本测试：基础纯文本消息","disable_web_page_preview":true}' \
-    -w "\nHTTP Code: %{http_code}")
-  echo "手动测试响应: ${test_response}"
+    -d "{\"chat_id\":\"${TELEGRAM_CHAT_ID}\",\"text\":\"🧪 测试：$(date)\",\"disable_web_page_preview\":true}" \
+    -w "\nHTTP: %{http_code}")
+  echo "基础测试响应: ${test_response}"
   
   if echo "$test_response" | grep -q '"ok":true'; then
-    echo "🧪 基础测试成功！现在发送完整示例..."
-    send_telegram_error "Test error with special chars: * & < > \" ' (network or storage issue)."
+    echo "🧪 基础成功！发送完整示例..."
+    send_telegram_error "Test error with special chars: * & < > \" '"
     send_telegram_success "10.5 MB"
   else
-    echo "🧪 基础测试失败。检查 TOKEN/CHAT_ID/Bot 权限。"
+    echo "🧪 基础失败。按排查步骤修复。"
   fi
   exit 0
 fi
