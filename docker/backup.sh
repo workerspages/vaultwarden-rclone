@@ -20,15 +20,14 @@ if [[ -z "${RCLONE_CONFIG:-}" && -n "${RCLONE_CONF_BASE64:-}" ]]; then
   export RCLONE_CONFIG="/config/rclone/rclone.conf"
 fi
 
-# 清理 RCLONE_REMOTE 中的前缀（如 PaaS 自动添加）
+# 清理 RCLONE_REMOTE 中的前缀
 RCLONE_REMOTE="${RCLONE_REMOTE#0}"
 
-# Telegram 失败通知（美化排版版本）
+# Telegram 失败通知
 send_telegram_error() {
   local error_msg="$1"
   local timestamp=$(date '+%Y-%m-%d %H:%M:%S %Z')
   
-  # 使用 printf 处理换行和格式
   local message
   message=$(printf '%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s' \
     '<b>🚨 Vaultwarden 备份失败</b>' \
@@ -52,7 +51,7 @@ send_telegram_error() {
   fi
 }
 
-# Telegram 成功通知（美化排版版本）
+# Telegram 成功通知
 send_telegram_success() {
   local archive_size="$1"
   local timestamp=$(date '+%Y-%m-%d %H:%M:%S %Z')
@@ -138,23 +137,20 @@ if [[ -z "${error_msg}" && "${BACKUP_RETAIN_DAYS}" -gt 0 ]]; then
     echo "🔧 Using jq-based cleanup (WebDAV compatible)..."
     if command -v jq >/dev/null 2>&1; then
       cutoff_date=$(date -d "${BACKUP_RETAIN_DAYS} days ago" '+%Y%m%d')
-      deleted_count=0
       
       if rclone lsjson "${RCLONE_REMOTE}" --files-only 2>/dev/null | jq -r ".[] | select(.Path | test(\"${BACKUP_FILENAME_PREFIX}.*\\\\.tar\\\\.${BACKUP_COMPRESSION}\$\")) | .Path" | while read -r file; do
         file_date=$(echo "$file" | grep -oE "[0-9]{8}" | head -1)
         if [[ -n "$file_date" && "$file_date" -lt "$cutoff_date" ]]; then
           echo "  🗑️  Deleting: $file"
-          if rclone delete "${RCLONE_REMOTE}/${file}" 2>/dev/null; then
-            ((deleted_count++))
-          fi
+          rclone delete "${RCLONE_REMOTE}/${file}" 2>/dev/null || true
         fi
       done; then
         echo "✅ jq-based cleanup completed"
       else
-        cleanup_error="jq-based cleanup failed. Check jq availability or rclone access."
+        cleanup_error="jq-based cleanup failed"
       fi
     else
-      cleanup_error="jq not found. Install jq or disable cleanup by setting BACKUP_RETAIN_DAYS=0."
+      cleanup_error="jq not found. Set BACKUP_RETAIN_DAYS=0 to disable cleanup."
     fi
   fi
 fi
