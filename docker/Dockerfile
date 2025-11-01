@@ -3,7 +3,7 @@ FROM vaultwarden/server:latest
 ARG DEBIAN_FRONTEND=noninteractive
 ENV TZ=${TZ:-UTC}
 
-# 基础工具 + rclone + supercronic（轻量 Cron）
+# 基础工具 + rclone + supercronic + curl（用于 Telegram 通知）
 RUN set -eux; \
     apt-get update; \
     apt-get install -y --no-install-recommends ca-certificates curl tzdata bash unzip; \
@@ -31,6 +31,10 @@ ENV BACKUP_ENABLED=true \
     RCLONE_REMOTE="" \
     RCLONE_FLAGS="--checksum --transfers=4 --checkers=8 --fast-list" \
     RESTORE_STRATEGY="replace" \
-    TZ="Asia/Shanghai"
+    TZ="Asia/Shanghai" \
+    TELEGRAM_ENABLED=false \
+    TELEGRAM_BOT_TOKEN="" \
+    TELEGRAM_CHAT_ID="" \
+    TELEGRAM_MESSAGE="Vaultwarden backup failed: %ERROR% at %TIME%"
 
 ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
