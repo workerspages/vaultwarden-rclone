@@ -1,15 +1,13 @@
 FROM vaultwarden/server:latest
 
 ARG DEBIAN_FRONTEND=noninteractive
-ENV TZ=${TZ:-Asia/Shanghai}  # 默认中国时区，支持覆盖
+ENV TZ=Asia/Shanghai
 
-# 基础工具 + rclone + supercronic + curl + tzdata（时区支持）
 RUN set -eux; \
     apt-get update; \
-    apt-get install -y --no-install-recommends ca-certificates curl tzdata bash unzip jq; \  # 添加 tzdata 和 jq
-    # 设置中国时区（东八区）
-    ln -snf /usr/share/zoneinfo/${TZ} /etc/localtime && \
-    echo ${TZ} > /etc/timezone && \
+    apt-get install -y --no-install-recommends ca-certificates curl tzdata bash unzip jq; \
+    ln -snf /usr/share/zoneinfo/$TZ /etc/localtime; \
+    echo $TZ > /etc/timezone; \
     dpkg-reconfigure --frontend noninteractive tzdata; \
     rm -rf /var/lib/apt/lists/*; \
     curl -fsSL https://rclone.org/install.sh | bash; \
@@ -18,13 +16,11 @@ RUN set -eux; \
       "https://github.com/aptible/supercronic/releases/download/v${SUPERCRONIC_VERSION}/supercronic-linux-amd64"; \
     chmod +x /usr/local/bin/supercronic
 
-# 脚本
 COPY docker/entrypoint.sh /usr/local/bin/entrypoint.sh
 COPY docker/backup.sh     /usr/local/bin/backup.sh
 COPY docker/restore.sh    /usr/local/bin/restore.sh
 RUN chmod +x /usr/local/bin/*.sh
 
-# 默认环境变量（可在 PaaS 上覆盖）
 ENV BACKUP_ENABLED=true \
     BACKUP_CRON="0 3 * * *" \
     BACKUP_SRC="/data" \
