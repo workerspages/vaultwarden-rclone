@@ -5,6 +5,13 @@ set -euo pipefail
 : "${RCLONE_REMOTE:=}"
 : "${RESTORE_STRATEGY:=replace}"
 
+# 加载 rclone 配置（如果未设置）
+if [[ -z "${RCLONE_CONFIG:-}" && -n "${RCLONE_CONF_BASE64:-}" ]]; then
+  mkdir -p /config/rclone
+  echo "${RCLONE_CONF_BASE64}" | base64 -d > /config/rclone/rclone.conf
+  export RCLONE_CONFIG="/config/rclone/rclone.conf"
+fi
+
 # 用法：
 #  1) restore.sh latest
 #  2) restore.sh remote-path/object.tar.gz
