@@ -40,7 +40,6 @@ ENV BACKUP_ENABLED=true \
     TEST_MODE="false" \
     TELEGRAM_ENABLED="false" \
     TELEGRAM_BOT_TOKEN="" \
-    TELEGRAM_CHAT_ID="" \
-    TELEGRAM_MESSAGE="🚨 *Vaultwarden 备份失败*\\n*错误详情：* %ERROR%\\n*时间戳：* %TIME%\\n*建议：* 验证 RCLONE_REMOTE 配置或联系管理员。"
+    TELEGRAM_CHAT_ID=""
 
 ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
