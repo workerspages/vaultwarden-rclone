@@ -43,4 +43,4 @@ ENV BACKUP_ENABLED=true \
     TELEGRAM_BOT_TOKEN="" \
     TELEGRAM_CHAT_ID=""
 
-ENTRYPOINT ["/bin/sh", "-c", "/usr/local/bin/restore.sh latest && /usr/local/bin/entrypoint.sh"]
+ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
