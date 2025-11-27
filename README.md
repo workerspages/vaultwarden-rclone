@@ -148,6 +148,7 @@ docker-compose up -d
 | `BACKUP_RETAIN_COUNT` | `30` | `count` 模式下的保留数量 |
 | `BACKUP_RETAIN_DAYS` | `14` | `days` 模式下的保留天数 |
 | `TELEGRAM_ENABLED` | `false` | 是否开启 TG 通知 |
+| `CLOUDFLARED_TOKEN` | `填入 Token` | Cloudflare Tunnel (填入Token开启) |
 
 ---
 
