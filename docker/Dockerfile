@@ -21,16 +21,22 @@ RUN set -eux; \
     apt-get clean; \
     rm -rf /var/lib/apt/lists/*; \
     \
+    # --- Rclone 安装 ---
     curl -fsSL -O "https://downloads.rclone.org/${RCLONE_VERSION}/rclone-${RCLONE_VERSION}-linux-amd64.zip"; \
     unzip "rclone-${RCLONE_VERSION}-linux-amd64.zip"; \
     mv "rclone-${RCLONE_VERSION}-linux-amd64/rclone" /usr/bin/rclone; \
     chmod +x /usr/bin/rclone; \
     rm -rf "rclone-${RCLONE_VERSION}-linux-amd64"* ; \
     \
+    # --- Supercronic 安装 ---
     SUPERCRONIC_VERSION=0.2.30; \
     curl -fsSL -o /usr/local/bin/supercronic \
       "https://github.com/aptible/supercronic/releases/download/v${SUPERCRONIC_VERSION}/supercronic-linux-amd64"; \
     chmod +x /usr/local/bin/supercronic; \
+    \
+    # --- Cloudflared 安装 (新增) ---
+    curl -L --output /usr/local/bin/cloudflared https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64; \
+    chmod +x /usr/local/bin/cloudflared; \
     \
     # 创建独立的配置目录
     mkdir -p /conf; \
@@ -56,7 +62,8 @@ ENV BACKUP_ENABLED=true \
     RCLONE_REMOTE="" \
     RCLONE_FLAGS="--checksum --transfers=4 --checkers=8 --fast-list" \
     RESTORE_STRATEGY="replace" \
-    DASHBOARD_PORT=5277
+    DASHBOARD_PORT=5277 \
+    CLOUDFLARED_TOKEN=""
 
 # 声明两个卷
 VOLUME ["/data", "/conf"]
