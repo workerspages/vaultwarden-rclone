@@ -11,20 +11,20 @@ from flask import Flask, render_template, request, redirect, url_for, session, f
 app = Flask(__name__)
 app.secret_key = os.urandom(24)
 
-# --- 路径变更 ---
 CONF_FILE = "/conf/env.conf"
 LOG_FILE = "/conf/backup.log"
 
 DASHBOARD_USER = os.environ.get("DASHBOARD_USER", "admin")
 DASHBOARD_PASSWORD = os.environ.get("DASHBOARD_PASSWORD", "admin")
 
-# 变量列表保持不变
+# 增加 CLOUDFLARED_TOKEN
 MANAGED_KEYS = [
     "RCLONE_REMOTE", "BACKUP_CRON", 
     "BACKUP_FILENAME_PREFIX", "BACKUP_COMPRESSION", 
     "TELEGRAM_ENABLED", "TELEGRAM_BOT_TOKEN", "TELEGRAM_CHAT_ID",
     "RETENTION_MODE", "BACKUP_RETAIN_DAYS", "BACKUP_RETAIN_COUNT",
-    "DASHBOARD_2FA_SECRET"
+    "DASHBOARD_2FA_SECRET",
+    "CLOUDFLARED_TOKEN" 
 ]
 
 def load_env_file():
@@ -60,6 +60,7 @@ def get_2fa_secret():
     if not secret: secret = os.environ.get("DASHBOARD_2FA_SECRET", "")
     return secret
 
+# ... (get_remote_files, generate_qr_base64 等 Helper 函数保持不变) ...
 def get_remote_files():
     file_vars = load_env_file()
     remote = file_vars.get("RCLONE_REMOTE")
@@ -84,6 +85,7 @@ def generate_qr_base64(uri):
     img.save(buf, format="PNG")
     return base64.b64encode(buf.getvalue()).decode("utf-8")
 
+# ... (Login, 2FA verify 保持不变) ...
 @app.route('/login', methods=['GET', 'POST'])
 def login():
     if request.method == 'POST':
@@ -184,9 +186,14 @@ def index():
         current_vars[key] = val
     
     has_rclone_conf = "RCLONE_CONF_BASE64" in os.environ and len(os.environ["RCLONE_CONF_BASE64"]) > 10
-    has_2fa = False
+    
+    # 2FA 状态
     s = get_2fa_secret()
-    if s and len(s) > 10: has_2fa = True
+    has_2fa = s and len(s) > 10
+    
+    # Tunnel 状态检测：如果 Token 存在则认为已启用
+    token = current_vars.get("CLOUDFLARED_TOKEN")
+    has_tunnel = token and len(token) > 10
 
     if request.method == 'POST':
         action = request.form.get('action')
@@ -195,7 +202,7 @@ def index():
             if 'DASHBOARD_2FA_SECRET' not in form_data:
                 form_data['DASHBOARD_2FA_SECRET'] = get_2fa_secret()
             save_env_file(form_data)
-            flash('配置已保存！', 'success')
+            flash('配置已保存！需重启生效。', 'success')
             return redirect(url_for('index'))
         elif action == 'backup':
             subprocess.Popen(["/usr/local/bin/backup.sh"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
@@ -215,7 +222,7 @@ def index():
         except: logs = "Logs unavailable"
     
     remote_files = get_remote_files()
-    return render_template('index.html', page='dashboard', config=current_vars, logs=logs, remote_files=remote_files, has_rclone_conf=has_rclone_conf, has_2fa=has_2fa)
+    return render_template('index.html', page='dashboard', config=current_vars, logs=logs, remote_files=remote_files, has_rclone_conf=has_rclone_conf, has_2fa=has_2fa, has_tunnel=has_tunnel)
 
 if __name__ == '__main__':
     port = int(os.environ.get('DASHBOARD_PORT', 5277))
