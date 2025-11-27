@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# --- 加载配置 ---
-if [[ -f "/data/env.conf" ]]; then
+# --- 加载持久化配置 (新路径) ---
+if [[ -f "/conf/env.conf" ]]; then
     set -a
-    source "/data/env.conf"
+    source "/conf/env.conf"
     set +a
 fi
 
@@ -22,7 +22,6 @@ fi
 : "${BACKUP_RETAIN_COUNT:=30}"
 : "${RCLONE_VIEW_URL:=}"
 
-# 自动加载 rclone 配置
 if [[ -z "${RCLONE_CONFIG:-}" && -n "${RCLONE_CONF_BASE64:-}" ]]; then
   mkdir -p /config/rclone
   echo "${RCLONE_CONF_BASE64}" | tr -d '\n\r ' | base64 -d > /config/rclone/rclone.conf
@@ -31,13 +30,13 @@ fi
 
 RCLONE_REMOTE="${RCLONE_REMOTE#0}"
 
-# HTML 转义函数
+# HTML 转义
 html_escape() {
   local text="$1"
   echo "$text" | sed 's/&/\&amp;/g; s/</\&lt;/g; s/>/\&gt;/g; s/"/\&quot;/g; s/'"'"'/\&#39;/g'
 }
 
-# Telegram 发送函数
+# Telegram 发送
 send_telegram_message() {
   local message="$1"
   if [[ "${TELEGRAM_ENABLED}" == "true" && -n "${TELEGRAM_BOT_TOKEN}" && -n "${TELEGRAM_CHAT_ID}" ]]; then
@@ -54,22 +53,8 @@ send_telegram_error() {
   local error_msg="$1"
   local timestamp=$(date '+%Y-%m-%d %H:%M:%S %Z')
   local escaped_error=$(html_escape "$error_msg")
-  local link_part=""
-  if [[ -n "${RCLONE_VIEW_URL}" ]]; then
-    link_part="<a href='${RCLONE_VIEW_URL}'>查看云盘</a>"
-  fi
-
-  local message
-  message=$(printf '%s\n\n%s\n<code>%s</code>\n\n%s\n%s\n\n%s\n%s %s\n' \
-    "<b>🚨 Vaultwarden 备份失败</b>" \
-    "<b>❌ 错误详情</b>" \
-    "$escaped_error" \
-    "<b>⏰ 发生时间</b>" \
-    "$timestamp" \
-    "<b>💡 修复建议</b>" \
-    "检查 RCLONE_REMOTE 配置，或" "$link_part 联系管理员。"
-  )
-
+  local message=$(printf '%s\n\n%s\n<code>%s</code>\n\n%s\n%s\n' \
+    "<b>🚨 Vaultwarden 备份失败</b>" "<b>❌ 错误</b>" "$escaped_error" "<b>⏰ 时间</b>" "$timestamp")
   send_telegram_message "$message"
 }
 
@@ -78,61 +63,30 @@ send_telegram_success() {
   local archive_size="$1"
   local timestamp=$(date '+%Y-%m-%d %H:%M:%S %Z')
   local remote_link="${RCLONE_REMOTE}"
-  if [[ -n "${RCLONE_VIEW_URL}" ]]; then
-    remote_link=$(printf '<a href="%s">%s</a>' "${RCLONE_VIEW_URL}" "${RCLONE_REMOTE}")
-  fi
-  
-  local policy_desc="未知"
-  case "${RETENTION_MODE}" in
-    smart) policy_desc="智能策略 (7天/4周/12月)";;
-    days)  policy_desc="保留最近 ${BACKUP_RETAIN_DAYS} 天";;
-    count) policy_desc="保留最近 ${BACKUP_RETAIN_COUNT} 份";;
-    forever) policy_desc="永久保留";;
-  esac
-
-  local message
-  message=$(printf '%s\n\n%s\n<code>%s</code>\n\n%s\n%s\n\n%s\n%s\n\n%s\n%s\n' \
-    "<b>✅ Vaultwarden 备份成功</b>" \
-    "<b>📦 文件大小</b>" \
-    "${archive_size}" \
-    "<b>📅 完成时间</b>" \
-    "${timestamp}" \
-    "<b>☁️ 存储位置</b>" \
-    "$remote_link" \
-    "<b>🧹 清理策略</b>" \
-    "${policy_desc}"
-  )
-
+  local message=$(printf '%s\n\n%s\n<code>%s</code>\n\n%s\n%s\n\n%s\n%s\n' \
+    "<b>✅ Vaultwarden 备份成功</b>" "<b>📦 大小</b>" "${archive_size}" "<b>📅 时间</b>" "${timestamp}" "<b>☁️ 位置</b>" "$remote_link")
   send_telegram_message "$message"
 }
 
-# 测试模式
-if [[ "${TEST_MODE}" == "true" ]]; then
-  send_telegram_error "Test error"
-  exit 0
-fi
-
 if [[ -z "${RCLONE_REMOTE}" ]]; then
-  send_telegram_error "RCLONE_REMOTE 未设置；跳过备份。"
+  send_telegram_error "RCLONE_REMOTE 未设置"
   exit 0
 fi
 
-# 备份核心逻辑
+# 备份逻辑：直接打包 /data，无需排除
 ts="$(date -u +%Y%m%d-%H%M%S)"
 tmp_dir="$(mktemp -d)"
 archive="${tmp_dir}/${BACKUP_FILENAME_PREFIX}-${ts}.tar.${BACKUP_COMPRESSION}"
 error_msg=""
 
 cd "${BACKUP_SRC}"
-
 echo "📦 Creating archive: ${archive} ..."
-# --- 关键修改：排除 env.conf 面板配置文件 ---
-# 这样备份包里就只有纯粹的 vaultwarden 数据
+
 case "${BACKUP_COMPRESSION}" in
-  gz)  tar --exclude='env.conf' -czf "${archive}" . ;;
-  zst) tar --exclude='env.conf' -I 'zstd -19 -T0' -cf "${archive}" . ;;
-  bz2) tar --exclude='env.conf' -cjf "${archive}" . ;;
-  xz)  tar --exclude='env.conf' -cJf "${archive}" . ;;
+  gz)  tar -czf "${archive}" . ;;
+  zst) tar -I 'zstd -19 -T0' -cf "${archive}" . ;;
+  bz2) tar -cjf "${archive}" . ;;
+  xz)  tar -cJf "${archive}" . ;;
   *)   send_telegram_error "不支持压缩: ${BACKUP_COMPRESSION}"; exit 2 ;;
 esac
 
@@ -140,7 +94,7 @@ archive_size=$(du -h "${archive}" | cut -f1)
 
 echo "☁️ Uploading to ${RCLONE_REMOTE} ..."
 if ! rclone copy "${archive}" "${RCLONE_REMOTE}" ${RCLONE_FLAGS}; then
-  error_msg="上传失败（网络或存储问题）。"
+  error_msg="上传失败"
 fi
 
 if [[ -n "${error_msg}" ]]; then
@@ -149,21 +103,16 @@ if [[ -n "${error_msg}" ]]; then
   exit 1
 fi
 
-echo "🧹 Running cleanup strategy: ${RETENTION_MODE}..."
-export RCLONE_REMOTE
-export BACKUP_FILENAME_PREFIX
-export RETENTION_MODE
-export BACKUP_RETAIN_DAYS
-export BACKUP_RETAIN_COUNT
-
+# 清理逻辑
+echo "🧹 Running cleanup strategy..."
+export RCLONE_REMOTE BACKUP_FILENAME_PREFIX RETENTION_MODE BACKUP_RETAIN_DAYS BACKUP_RETAIN_COUNT
 if python3 /app/dashboard/retention.py > /tmp/retention.log 2>&1; then
   cat /tmp/retention.log
   echo "✅ Cleanup finished."
 else
-  echo "⚠️ Cleanup script warning:"
+  echo "⚠️ Cleanup warning:"
   cat /tmp/retention.log
 fi
 
 rm -rf "${tmp_dir}"
-
 send_telegram_success "${archive_size}"
