@@ -1,6 +1,5 @@
 import os
 import subprocess
-import signal
 import json
 from werkzeug.utils import secure_filename
 from flask import Flask, render_template, request, redirect, url_for, session, flash, send_file, after_this_request
@@ -23,7 +22,7 @@ MANAGED_KEYS = [
 ]
 
 def load_env_file():
-    """只读取文件中的配置"""
+    """读取配置文件"""
     env_vars = {}
     if os.path.exists(CONF_FILE):
         with open(CONF_FILE, 'r') as f:
@@ -35,53 +34,39 @@ def load_env_file():
     return env_vars
 
 def save_env_file(form_data):
-    """保存配置：处理优先级 表单 > 文件 > 环境变量"""
-    # 1. 获取当前文件中的值
-    file_vars = load_env_file()
-    
+    """保存配置：空值处理策略"""
     lines = []
     for key in MANAGED_KEYS:
         new_val = form_data.get(key)
         
-        final_val = ""
-        
-        # --- 特殊逻辑：RCLONE_CONF_BASE64 ---
+        # --- 核心修复：RCLONE_CONF_BASE64 ---
         if key == "RCLONE_CONF_BASE64":
+            # 只有当用户真的填了新内容时，才写入文件
             if new_val and new_val.strip():
-                # A. 用户填了新值 -> 使用新值
-                final_val = new_val.strip()
-            else:
-                # B. 用户留空 -> 尝试保留旧值
-                # 优先取文件里的，文件没有取环境变量里的，都没有才为空
-                final_val = file_vars.get(key, os.environ.get(key, ""))
-        
-        # --- 普通逻辑：其他字段 ---
+                safe_val = new_val.strip().replace('"', '\\"')
+                lines.append(f'{key}="{safe_val}"')
+            # 如果用户留空，则【跳过】不写入。
+            # 这样文件里就没有这个 key，系统会自动 fallback 使用环境变量。
+            
+        # --- 其他字段 ---
         else:
-            # 如果表单里有这个字段（即使是空字符串），就使用表单的（允许用户清空配置）
-            if new_val is not None:
-                final_val = new_val
-            else:
-                # 表单里没传这个key（防御性），取现有状态
-                final_val = file_vars.get(key, os.environ.get(key, ""))
-
-        # 转义双引号并写入
-        safe_val = final_val.replace('"', '\\"')
-        lines.append(f'{key}="{safe_val}"')
+            # 其他字段允许写入空值（比如清空 Telegram Token）
+            val = new_val if new_val is not None else ""
+            safe_val = val.replace('"', '\\"')
+            lines.append(f'{key}="{safe_val}"')
     
-    # 写入文件
     with open(CONF_FILE, 'w') as f:
         f.write("\n".join(lines) + "\n")
 
 def get_remote_files():
-    remote = os.environ.get("RCLONE_REMOTE")
-    # 如果环境变量里没有，尝试读取一下文件（应对刚保存完还没重启的情况）
-    if not remote:
-         file_vars = load_env_file()
-         remote = file_vars.get("RCLONE_REMOTE", "")
-
+    # 获取 Remote 地址：优先文件，其次环境
+    file_vars = load_env_file()
+    remote = file_vars.get("RCLONE_REMOTE")
+    if remote is None: # 文件中没有
+        remote = os.environ.get("RCLONE_REMOTE", "")
+        
     if not remote:
         return []
-        
     try:
         cmd = ["rclone", "lsjson", remote, "--files-only", "--no-mimetype"]
         result = subprocess.check_output(cmd, timeout=15)
@@ -115,11 +100,12 @@ def logout():
 def download_file(filename):
     if not session.get('logged_in'):
         return redirect(url_for('login'))
-        
-    remote = os.environ.get("RCLONE_REMOTE")
-    if not remote:
-         file_vars = load_env_file()
-         remote = file_vars.get("RCLONE_REMOTE", "")
+    
+    # 逻辑同 get_remote_files
+    file_vars = load_env_file()
+    remote = file_vars.get("RCLONE_REMOTE")
+    if remote is None:
+        remote = os.environ.get("RCLONE_REMOTE", "")
 
     if not remote:
         flash("未配置 RCLONE_REMOTE", "danger")
@@ -186,12 +172,23 @@ def index():
     if not session.get('logged_in'):
         return redirect(url_for('login'))
 
-    # 读取配置：合并 文件配置 和 环境变量配置
+    # 读取逻辑：文件优先，环境垫底
     file_vars = load_env_file()
     current_vars = {}
+    
     for key in MANAGED_KEYS:
-        # 优先显示文件里存的，如果没有，显示当前环境变量里的
-        current_vars[key] = file_vars.get(key, os.environ.get(key, ""))
+        # 1. 尝试从文件获取
+        val = file_vars.get(key)
+        
+        # 2. 如果文件中没有这个key（或者对于Base64来说，如果值是空字符串也视为没有），则使用环境变量
+        if val is None:
+            val = os.environ.get(key, "")
+        
+        # 特殊处理：Base64 如果文件里存的是空字符串，也回退到环境变量
+        if key == "RCLONE_CONF_BASE64" and val == "":
+             val = os.environ.get(key, "")
+             
+        current_vars[key] = val
 
     if request.method == 'POST':
         action = request.form.get('action')
