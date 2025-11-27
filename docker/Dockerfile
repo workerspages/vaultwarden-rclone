@@ -3,7 +3,10 @@ FROM vaultwarden/server:latest
 ARG DEBIAN_FRONTEND=noninteractive
 ENV TZ=Asia/Shanghai
 
-# 安装依赖：增加了 python3, python3-flask, procps (用于进程管理)
+# ---在此处修改 Rclone 版本号即可升级---
+ARG RCLONE_VERSION=v1.68.2
+
+# 安装依赖：增加了 python3, python3-flask, procps
 RUN set -eux; \
     apt-get update; \
     apt-get install -y --no-install-recommends \
@@ -14,7 +17,15 @@ RUN set -eux; \
     dpkg-reconfigure --frontend noninteractive tzdata; \
     apt-get clean; \
     rm -rf /var/lib/apt/lists/*; \
-    curl -fsSL https://rclone.org/install.sh | bash; \
+    \
+    # --- Rclone 安装 (手动指定版本) --- \
+    curl -fsSL -O "https://downloads.rclone.org/${RCLONE_VERSION}/rclone-${RCLONE_VERSION}-linux-amd64.zip"; \
+    unzip "rclone-${RCLONE_VERSION}-linux-amd64.zip"; \
+    mv "rclone-${RCLONE_VERSION}-linux-amd64/rclone" /usr/bin/rclone; \
+    chmod +x /usr/bin/rclone; \
+    rm -rf "rclone-${RCLONE_VERSION}-linux-amd64"* ; \
+    \
+    # --- Supercronic 安装 --- \
     SUPERCRONIC_VERSION=0.2.30; \
     curl -fsSL -o /usr/local/bin/supercronic \
       "https://github.com/aptible/supercronic/releases/download/v${SUPERCRONIC_VERSION}/supercronic-linux-amd64"; \
@@ -30,7 +41,6 @@ RUN chmod +x /usr/local/bin/*.sh
 COPY docker/dashboard /app/dashboard
 
 # 关键：将 retention.py 复制到 /app/dashboard/ 目录
-# 这样 backup.sh 里的 python3 /app/dashboard/retention.py 才能找到它
 COPY docker/retention.py /app/dashboard/retention.py
 
 # 环境变量默认值
