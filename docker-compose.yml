@@ -2,7 +2,7 @@ version: '3.8'
 
 services:
   vaultwarden:
-    image: vaultwarden-rclone:latest
+    image: ghcr.io/workerspages/vaultwarden-rclone:panel
     container_name: vaultwarden
     restart: always
     ports:
@@ -13,11 +13,11 @@ services:
       
       # --- Web 控制台登录凭证 ---
       - DASHBOARD_USER=admin
-      - DASHBOARD_PASSWORD=your_secure_password
+      - DASHBOARD_PASSWORD=admin
       
       # --- 初始 Rclone 配置 (第一次运行时生效，后续可在面板修改) ---
       - RCLONE_REMOTE=onedrive:/vaultwarden_backup
-      # - RCLONE_CONF_BASE64=...
+      - RCLONE_CONF_BASE64=...
       
       # --- 备份策略 ---
       - BACKUP_CRON=0 3 * * *
