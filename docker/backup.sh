@@ -18,7 +18,6 @@ set -euo pipefail
 # 自动加载 rclone 配置
 if [[ -z "${RCLONE_CONFIG:-}" && -n "${RCLONE_CONF_BASE64:-}" ]]; then
   mkdir -p /config/rclone
-  # 关键修复：增加 tr -d '\n\r ' 剔除所有换行符和空格，防止 base64 解码失败
   echo "${RCLONE_CONF_BASE64}" | tr -d '\n\r ' | base64 -d > /config/rclone/rclone.conf
   export RCLONE_CONFIG="/config/rclone/rclone.conf"
 fi
@@ -135,29 +134,33 @@ if ! rclone copy "${archive}" "${RCLONE_REMOTE}" ${RCLONE_FLAGS}; then
   error_msg="上传失败（网络或存储问题）。"
 fi
 
-cleanup_error=""
-if [[ -z "${error_msg}" ]]; then
-  echo "🧹 Running cleanup strategy: ${RETENTION_MODE}..."
-  export RCLONE_REMOTE
-  export BACKUP_FILENAME_PREFIX
-  export RETENTION_MODE
-  export BACKUP_RETAIN_DAYS
-  export BACKUP_RETAIN_COUNT
-  
-  if python3 /app/dashboard/retention.py 2>&1 | tee /tmp/retention.log; then
-    echo "✅ Cleanup finished."
-  else
-    cleanup_error="清理脚本执行出错，请查看日志。"
-  fi
+# 如果上传本身失败了，直接报错退出
+if [[ -n "${error_msg}" ]]; then
+  send_telegram_error "${error_msg}"
+  rm -rf "${tmp_dir}"
+  exit 1
+fi
+
+# --- 只有上传成功了才执行清理 ---
+echo "🧹 Running cleanup strategy: ${RETENTION_MODE}..."
+export RCLONE_REMOTE
+export BACKUP_FILENAME_PREFIX
+export RETENTION_MODE
+export BACKUP_RETAIN_DAYS
+export BACKUP_RETAIN_COUNT
+
+# 执行清理，无论成功与否，都不影响“备份成功”的状态
+# 将 stderr 重定向到 stdout，防止被误判为严重错误
+if python3 /docker/retention.py > /tmp/retention.log 2>&1; then
+  cat /tmp/retention.log
+  echo "✅ Cleanup finished."
+else
+  echo "⚠️ Cleanup script warning (check logs):"
+  cat /tmp/retention.log
+  # 这里不设置 error_msg，不发送失败通知
 fi
 
 rm -rf "${tmp_dir}"
 
-if [[ -n "${error_msg}" ]]; then
-  send_telegram_error "${error_msg}"
-  exit 1
-elif [[ -n "${cleanup_error}" ]]; then
-  send_telegram_error "${cleanup_error}"
-fi
-
+# 发送成功通知
 send_telegram_success "${archive_size}"
