@@ -93,7 +93,7 @@
             <!-- 文件列表 -->
             <div class="card shadow mb-4">
                 <div class="card-header bg-secondary text-white d-flex justify-content-between align-items-center">
-                    <span>☁️ 云端备份文件 ({{ config.RCLONE_REMOTE }})</span>
+                    <span>☁️ 云端备份文件</span>
                     <a href="/" class="btn btn-sm btn-light py-0">刷新</a>
                 </div>
                 <div class="card-body p-0">
@@ -149,10 +149,22 @@
                                 <label class="form-label">Rclone Remote</label>
                                 <input type="text" name="RCLONE_REMOTE" class="form-control" value="{{ config.RCLONE_REMOTE }}" placeholder="onedrive:/backup">
                             </div>
+                            
+                            <!-- Rclone Config Base64 展示区域 (只读) -->
                             <div class="mb-3">
-                                <label class="form-label">Rclone Config Base64 (留空不覆盖)</label>
-                                <textarea name="RCLONE_CONF_BASE64" class="form-control" rows="2" placeholder="eyJ..."></textarea>
+                                <label class="form-label">Rclone Config Base64</label>
+                                {% if has_rclone_conf %}
+                                    <div class="alert alert-success py-2 mb-0">
+                                        ✅ 已通过系统环境变量 (ENV) 成功加载配置
+                                    </div>
+                                {% else %}
+                                    <div class="alert alert-warning py-2 mb-0">
+                                        ⚠️ 未检测到环境变量 RCLONE_CONF_BASE64，请在部署平台设置
+                                    </div>
+                                {% endif %}
+                                <div class="form-text">为了安全和稳定，请在 Zeabur/Docker 环境变量中直接设置此项。</div>
                             </div>
+
                             <div class="row">
                                 <div class="col-md-6 mb-3">
                                     <label class="form-label">Cron 表达式</label>
@@ -177,7 +189,6 @@
                                 </select>
                             </div>
                             
-                            <!-- 动态说明与输入 -->
                             <div class="alert alert-light border small text-muted mb-3" id="desc-smart" style="display:none;">
                                 随着时间推移，备份将被自动清理。系统将保留：<br>
                                 • 最近 <strong>7 天</strong> 中每天一份<br>
