@@ -1,15 +1,13 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# --- 核心修复：每次运行前先加载最新的持久化配置 ---
+# --- 加载配置 ---
 if [[ -f "/data/env.conf" ]]; then
-    # echo "📜 Loading config from /data/env.conf..."
     set -a
     source "/data/env.conf"
     set +a
 fi
 
-# 默认值设置 (如果配置文件里没有，才使用这些默认值)
 : "${BACKUP_SRC:=/data}"
 : "${BACKUP_FILENAME_PREFIX:=vaultwarden}"
 : "${BACKUP_COMPRESSION:=gz}"
@@ -128,11 +126,13 @@ error_msg=""
 cd "${BACKUP_SRC}"
 
 echo "📦 Creating archive: ${archive} ..."
+# --- 关键修改：排除 env.conf 面板配置文件 ---
+# 这样备份包里就只有纯粹的 vaultwarden 数据
 case "${BACKUP_COMPRESSION}" in
-  gz)  tar -czf "${archive}" . ;;
-  zst) tar -I 'zstd -19 -T0' -cf "${archive}" . ;;
-  bz2) tar -cjf "${archive}" . ;;
-  xz)  tar -cJf "${archive}" . ;;
+  gz)  tar --exclude='env.conf' -czf "${archive}" . ;;
+  zst) tar --exclude='env.conf' -I 'zstd -19 -T0' -cf "${archive}" . ;;
+  bz2) tar --exclude='env.conf' -cjf "${archive}" . ;;
+  xz)  tar --exclude='env.conf' -cJf "${archive}" . ;;
   *)   send_telegram_error "不支持压缩: ${BACKUP_COMPRESSION}"; exit 2 ;;
 esac
 
@@ -149,7 +149,6 @@ if [[ -n "${error_msg}" ]]; then
   exit 1
 fi
 
-# --- 只有上传成功了才执行清理 ---
 echo "🧹 Running cleanup strategy: ${RETENTION_MODE}..."
 export RCLONE_REMOTE
 export BACKUP_FILENAME_PREFIX
@@ -157,7 +156,6 @@ export RETENTION_MODE
 export BACKUP_RETAIN_DAYS
 export BACKUP_RETAIN_COUNT
 
-# 执行清理脚本
 if python3 /app/dashboard/retention.py > /tmp/retention.log 2>&1; then
   cat /tmp/retention.log
   echo "✅ Cleanup finished."
