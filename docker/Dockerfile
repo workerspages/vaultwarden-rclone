@@ -3,11 +3,12 @@ FROM vaultwarden/server:latest
 ARG DEBIAN_FRONTEND=noninteractive
 ENV TZ=Asia/Shanghai
 
-# 安装所有依赖工具（一次性 RUN，减少镜像层；添加 zstd 支持 zst 压缩）
+# 安装依赖：增加了 python3, python3-flask, procps (用于进程管理)
 RUN set -eux; \
     apt-get update; \
     apt-get install -y --no-install-recommends \
-      ca-certificates curl tzdata bash unzip jq zstd; \
+      ca-certificates curl tzdata bash unzip jq zstd \
+      python3 python3-flask procps; \
     ln -snf /usr/share/zoneinfo/$TZ /etc/localtime; \
     echo $TZ > /etc/timezone; \
     dpkg-reconfigure --frontend noninteractive tzdata; \
@@ -19,13 +20,16 @@ RUN set -eux; \
       "https://github.com/aptible/supercronic/releases/download/v${SUPERCRONIC_VERSION}/supercronic-linux-amd64"; \
     chmod +x /usr/local/bin/supercronic
 
-# 复制脚本并设置权限
+# 复制脚本
 COPY docker/entrypoint.sh /usr/local/bin/entrypoint.sh
 COPY docker/backup.sh     /usr/local/bin/backup.sh
 COPY docker/restore.sh    /usr/local/bin/restore.sh
 RUN chmod +x /usr/local/bin/*.sh
 
-# 定义环境变量（所有可在 PaaS 平台覆盖）
+# 复制 Dashboard 代码
+COPY docker/dashboard /app/dashboard
+
+# 环境变量默认值
 ENV BACKUP_ENABLED=true \
     BACKUP_CRON="0 3 * * *" \
     BACKUP_SRC="/data" \
@@ -37,10 +41,6 @@ ENV BACKUP_ENABLED=true \
     RCLONE_REMOTE="" \
     RCLONE_FLAGS="--checksum --transfers=4 --checkers=8 --fast-list" \
     RESTORE_STRATEGY="replace" \
-    RESTORE_ON_START="" \
-    TEST_MODE="false" \
-    TELEGRAM_ENABLED="false" \
-    TELEGRAM_BOT_TOKEN="" \
-    TELEGRAM_CHAT_ID=""
+    DASHBOARD_PORT=5277
 
 ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
