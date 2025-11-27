@@ -1,6 +1,15 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# --- 核心修复：每次运行前先加载最新的持久化配置 ---
+if [[ -f "/data/env.conf" ]]; then
+    # echo "📜 Loading config from /data/env.conf..."
+    set -a
+    source "/data/env.conf"
+    set +a
+fi
+
+# 默认值设置 (如果配置文件里没有，才使用这些默认值)
 : "${BACKUP_SRC:=/data}"
 : "${BACKUP_FILENAME_PREFIX:=vaultwarden}"
 : "${BACKUP_COMPRESSION:=gz}"
@@ -134,7 +143,6 @@ if ! rclone copy "${archive}" "${RCLONE_REMOTE}" ${RCLONE_FLAGS}; then
   error_msg="上传失败（网络或存储问题）。"
 fi
 
-# 如果上传本身失败了，直接报错退出
 if [[ -n "${error_msg}" ]]; then
   send_telegram_error "${error_msg}"
   rm -rf "${tmp_dir}"
@@ -149,18 +157,15 @@ export RETENTION_MODE
 export BACKUP_RETAIN_DAYS
 export BACKUP_RETAIN_COUNT
 
-# 执行清理，无论成功与否，都不影响“备份成功”的状态
-# 将 stderr 重定向到 stdout，防止被误判为严重错误
-if python3 /docker/retention.py > /tmp/retention.log 2>&1; then
+# 执行清理脚本
+if python3 /app/dashboard/retention.py > /tmp/retention.log 2>&1; then
   cat /tmp/retention.log
   echo "✅ Cleanup finished."
 else
-  echo "⚠️ Cleanup script warning (check logs):"
+  echo "⚠️ Cleanup script warning:"
   cat /tmp/retention.log
-  # 这里不设置 error_msg，不发送失败通知
 fi
 
 rm -rf "${tmp_dir}"
 
-# 发送成功通知
 send_telegram_success "${archive_size}"
