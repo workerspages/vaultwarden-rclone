@@ -1,0 +1,27 @@
+version: '3.8'
+
+services:
+  vaultwarden:
+    image: vaultwarden-rclone:latest
+    container_name: vaultwarden
+    restart: always
+    ports:
+      - "80:80"        # Vaultwarden 服务
+      - "5277:5277"    # Web 控制台面板
+    environment:
+      - TZ=Asia/Shanghai
+      
+      # --- Web 控制台登录凭证 ---
+      - DASHBOARD_USER=admin
+      - DASHBOARD_PASSWORD=your_secure_password
+      
+      # --- 初始 Rclone 配置 (第一次运行时生效，后续可在面板修改) ---
+      - RCLONE_REMOTE=onedrive:/vaultwarden_backup
+      # - RCLONE_CONF_BASE64=...
+      
+      # --- 备份策略 ---
+      - BACKUP_CRON=0 3 * * *
+      - BACKUP_RETAIN_DAYS=14
+      
+    volumes:
+      - ./vw-data:/data
