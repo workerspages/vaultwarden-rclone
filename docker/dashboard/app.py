@@ -17,16 +17,17 @@ LOG_FILE = "/var/log/backup.log"
 DASHBOARD_USER = os.environ.get("DASHBOARD_USER", "admin")
 DASHBOARD_PASSWORD = os.environ.get("DASHBOARD_PASSWORD", "admin")
 
-# 需要管理的变量 (增加了 DASHBOARD_2FA_SECRET)
+# 需要在面板中管理的变量
 MANAGED_KEYS = [
     "RCLONE_REMOTE", "BACKUP_CRON", 
     "BACKUP_FILENAME_PREFIX", "BACKUP_COMPRESSION", 
     "TELEGRAM_ENABLED", "TELEGRAM_BOT_TOKEN", "TELEGRAM_CHAT_ID",
     "RETENTION_MODE", "BACKUP_RETAIN_DAYS", "BACKUP_RETAIN_COUNT",
-    "DASHBOARD_2FA_SECRET" 
+    "DASHBOARD_2FA_SECRET"  # 确保包含此项
 ]
 
 def load_env_file():
+    """读取配置文件"""
     env_vars = {}
     if os.path.exists(CONF_FILE):
         with open(CONF_FILE, 'r') as f:
@@ -38,21 +39,40 @@ def load_env_file():
     return env_vars
 
 def save_env_file(data_dict):
-    """通用保存函数，支持直接传入字典"""
+    """保存配置（支持字典更新）"""
+    # 1. 读取当前文件中的最新状态
     current_vars = load_env_file()
-    # 更新当前文件中的值
+    
+    # 2. 更新传入的值
     for k, v in data_dict.items():
         if k in MANAGED_KEYS:
             current_vars[k] = v
-    
+            
+    # 3. 写入文件
     lines = []
     for key in MANAGED_KEYS:
-        val = current_vars.get(key, os.environ.get(key, ""))
+        # 优先取 current_vars (文件里的)，如果没有则取环境变量
+        val = current_vars.get(key)
+        if val is None:
+            val = os.environ.get(key, "")
+        
         safe_val = val.replace('"', '\\"')
         lines.append(f'{key}="{safe_val}"')
     
     with open(CONF_FILE, 'w') as f:
         f.write("\n".join(lines) + "\n")
+
+# --- 核心修复：实时获取 2FA 密钥 ---
+def get_2fa_secret():
+    # 每次调用都重新读取文件，确保获取最新保存的密钥
+    file_vars = load_env_file()
+    secret = file_vars.get("DASHBOARD_2FA_SECRET")
+    
+    # 如果文件里没有，再试着从环境变量读（兼容通过 ENV 设置的情况）
+    if not secret:
+        secret = os.environ.get("DASHBOARD_2FA_SECRET", "")
+        
+    return secret
 
 def get_remote_files():
     file_vars = load_env_file()
@@ -74,12 +94,6 @@ def get_remote_files():
         print(f"Rclone ls error: {e}")
         return []
 
-# --- 2FA 辅助函数 ---
-def get_2fa_secret():
-    # 优先从文件读取，其次环境变量
-    file_vars = load_env_file()
-    return file_vars.get("DASHBOARD_2FA_SECRET", os.environ.get("DASHBOARD_2FA_SECRET", ""))
-
 def generate_qr_base64(provisioning_uri):
     img = qrcode.make(provisioning_uri)
     buffered = io.BytesIO()
@@ -92,19 +106,18 @@ def login():
         username = request.form.get('username')
         password = request.form.get('password')
         
-        # 第一步：验证账号密码
         if username == DASHBOARD_USER and password == DASHBOARD_PASSWORD:
-            # 检查是否已配置 2FA
+            # 关键：这里调用 get_2fa_secret() 会实时去读文件
             secret = get_2fa_secret()
             
-            if secret:
-                # 已配置 2FA -> 进入验证码输入页面
-                session['pre_2fa_auth'] = True # 标记已通过密码验证
+            if secret and len(secret) > 10: # 简单校验长度防止空串
+                # 已配置 -> 验证
+                session['pre_2fa_auth'] = True
                 return render_template('index.html', page='2fa_verify')
             else:
-                # 未配置 2FA -> 进入设置页面
+                # 未配置 -> 设置
                 new_secret = pyotp.random_base32()
-                session['temp_secret'] = new_secret # 暂存 Session
+                session['temp_secret'] = new_secret
                 session['pre_2fa_auth'] = True
                 
                 totp = pyotp.TOTP(new_secret)
@@ -125,21 +138,22 @@ def verify_2fa():
     
     code = request.form.get('code')
     
-    # 判断是首次设置验证还是登录验证
+    # A. 首次设置流程
     if session.get('temp_secret'):
-        # 首次设置
         secret = session['temp_secret']
         totp = pyotp.TOTP(secret)
         if totp.verify(code):
-            # 验证成功，保存密钥到 env.conf
+            # 验证通过 -> 保存到文件
             save_env_file({"DASHBOARD_2FA_SECRET": secret})
+            
             session.pop('temp_secret', None)
             session.pop('pre_2fa_auth', None)
             session['logged_in'] = True
-            flash('2FA 设置成功并已登录！', 'success')
+            flash('2FA 设置成功并已登录！密钥已保存。', 'success')
             return redirect(url_for('index'))
+            
+    # B. 登录验证流程
     else:
-        # 登录验证
         secret = get_2fa_secret()
         if secret:
             totp = pyotp.TOTP(secret)
@@ -148,10 +162,9 @@ def verify_2fa():
                 session['logged_in'] = True
                 return redirect(url_for('index'))
     
-    flash('验证码错误，请重试', 'danger')
-    # 根据状态返回不同页面
+    flash('验证码错误', 'danger')
+    # 返回原页面
     if session.get('temp_secret'):
-        # 重新渲染设置页需要重新生成二维码
         totp = pyotp.TOTP(session['temp_secret'])
         uri = totp.provisioning_uri(name=DASHBOARD_USER, issuer_name="Vaultwarden Backup")
         qr_b64 = generate_qr_base64(uri)
@@ -164,9 +177,6 @@ def logout():
     session.clear()
     return redirect(url_for('login'))
 
-# ... (download_file, restore_file, upload_restore 逻辑与之前相同，略去以节省篇幅，请保留原代码) ...
-# 为了完整性，这里必须包含之前所有的路由逻辑，只是把 index 路由的 session 检查改一下
-
 @app.route('/restore_file', methods=['POST'])
 def restore_file():
     if not session.get('logged_in'): return redirect(url_for('login'))
@@ -178,8 +188,6 @@ def restore_file():
 @app.route('/download/<path:filename>')
 def download_file(filename):
     if not session.get('logged_in'): return redirect(url_for('login'))
-    # ... (原有下载逻辑) ...
-    # 简写以适配长度限制，请保持你现有的 download 逻辑
     file_vars = load_env_file()
     remote = file_vars.get("RCLONE_REMOTE", os.environ.get("RCLONE_REMOTE", ""))
     if not remote: return redirect(url_for('index'))
@@ -200,7 +208,6 @@ def download_file(filename):
 @app.route('/upload_restore', methods=['POST'])
 def upload_restore():
     if not session.get('logged_in'): return redirect(url_for('login'))
-    # ... (原有上传逻辑) ...
     file = request.files.get('file')
     if file and file.filename:
         filename = secure_filename(file.filename)
@@ -225,15 +232,24 @@ def index():
 
     has_rclone_conf = "RCLONE_CONF_BASE64" in os.environ and len(os.environ["RCLONE_CONF_BASE64"]) > 10
     
-    # 2FA 状态显示
-    has_2fa = "DASHBOARD_2FA_SECRET" in file_vars or "DASHBOARD_2FA_SECRET" in os.environ
+    # 检查是否开启了 2FA (用于显示 Badge)
+    has_2fa = False
+    secret = get_2fa_secret()
+    if secret and len(secret) > 10:
+        has_2fa = True
 
     if request.method == 'POST':
         action = request.form.get('action')
         
         if action == 'save':
-            # 保存时注意不要把 DASHBOARD_2FA_SECRET 覆盖掉（虽然表单里没有它）
-            save_env_file(request.form)
+            # 如果是表单提交，需要注意不要丢失 2FA 密钥
+            # 因为 save_env_file 会重写整个文件
+            # 这里我们把当前的 2FA 密钥塞回表单数据里（如果它不在表单里的话）
+            form_data = request.form.to_dict()
+            if 'DASHBOARD_2FA_SECRET' not in form_data:
+                form_data['DASHBOARD_2FA_SECRET'] = get_2fa_secret()
+            
+            save_env_file(form_data)
             flash('配置已保存！需重启生效。', 'success')
             return redirect(url_for('index'))
             
@@ -246,7 +262,6 @@ def index():
             flash('还原任务已启动。', 'warning')
             
         elif action == 'reset_2fa':
-            # 重置 2FA 功能
             save_env_file({"DASHBOARD_2FA_SECRET": ""})
             session.clear()
             flash('2FA 已重置，请重新登录并绑定。', 'warning')
