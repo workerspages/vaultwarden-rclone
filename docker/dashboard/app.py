@@ -33,12 +33,29 @@ def load_env_file():
                     env_vars[key] = val
     return env_vars
 
-def save_env_file(data):
+def save_env_file(form_data):
+    # 1. 先读取旧配置，防止覆盖未提交的字段
+    current_vars = load_env_file()
+    
     lines = []
     for key in MANAGED_KEYS:
-        val = data.get(key, "")
-        # 转义双引号
-        safe_val = val.replace('"', '\\"')
+        new_val = form_data.get(key)
+        
+        # 特殊逻辑：RCLONE_CONF_BASE64
+        # 如果前端留空，则使用旧值（current_vars中的值），不覆盖为空
+        if key == "RCLONE_CONF_BASE64":
+            if new_val and new_val.strip():
+                # 用户输入了新内容，去除两端空白
+                final_val = new_val.strip()
+            else:
+                # 用户留空，保留原值
+                final_val = current_vars.get(key, "")
+        else:
+            # 其他字段：以前端提交的为准（即使是空也覆盖，因为可能用户想清空）
+            final_val = new_val if new_val is not None else current_vars.get(key, "")
+
+        # 转义双引号并写入
+        safe_val = final_val.replace('"', '\\"')
         lines.append(f'{key}="{safe_val}"')
     
     with open(CONF_FILE, 'w') as f:
@@ -49,13 +66,10 @@ def get_remote_files():
     if not remote:
         return []
     try:
-        # 获取 JSON 格式的文件列表
         cmd = ["rclone", "lsjson", remote, "--files-only", "--no-mimetype"]
         result = subprocess.check_output(cmd, timeout=15)
         files = json.loads(result)
-        # 按时间倒序排列 (ModTime)
         files.sort(key=lambda x: x.get("ModTime", ""), reverse=True)
-        # 格式化大小和时间
         for f in files:
             size = f.get("Size", 0)
             f["SizeHuman"] = f"{size / 1024 / 1024:.2f} MB"
@@ -96,7 +110,6 @@ def download_file(filename):
     local_path = os.path.join(temp_dir, filename)
 
     try:
-        # 使用 rclone copyto 下载
         remote_path = f"{remote.rstrip('/')}/{filename}"
         subprocess.check_call(["rclone", "copyto", remote_path, local_path], timeout=600)
         
@@ -105,16 +118,12 @@ def download_file(filename):
             try:
                 os.remove(local_path)
             except Exception as e:
-                print(f"Error removing temp file: {e}")
+                pass
             return response
             
         return send_file(local_path, as_attachment=True, download_name=filename)
-
-    except subprocess.CalledProcessError:
-        flash(f"从云端下载文件失败: {filename}", "danger")
-        return redirect(url_for('index'))
     except Exception as e:
-        flash(f"错误: {str(e)}", "danger")
+        flash(f"下载失败: {str(e)}", "danger")
         return redirect(url_for('index'))
 
 @app.route('/upload_restore', methods=['POST'])
@@ -136,23 +145,19 @@ def upload_restore():
         save_path = os.path.join("/tmp", filename)
         try:
             file.save(save_path)
-            # 调用 restore.sh，传入本地路径
             process = subprocess.run(
                 ["/usr/local/bin/restore.sh", save_path], 
                 capture_output=True, text=True
             )
-            
             if process.returncode == 0:
                 flash(f"文件 {filename} 上传并还原成功！", "success")
             else:
                 flash(f"还原失败: {process.stderr}", "danger")
-                
         except Exception as e:
             flash(f"处理文件时出错: {str(e)}", "danger")
         finally:
             if os.path.exists(save_path):
                 os.remove(save_path)
-                
     return redirect(url_for('index'))
 
 @app.route('/', methods=['GET', 'POST'])
@@ -160,10 +165,11 @@ def index():
     if not session.get('logged_in'):
         return redirect(url_for('login'))
 
-    # 读取环境变量 (优先文件，其次系统)
+    # 读取配置
     file_vars = load_env_file()
     current_vars = {}
     for key in MANAGED_KEYS:
+        # 优先读取文件中的值，没有则读取环境变量
         current_vars[key] = file_vars.get(key, os.environ.get(key, ""))
 
     if request.method == 'POST':
@@ -171,16 +177,16 @@ def index():
         
         if action == 'save':
             save_env_file(request.form)
-            flash('配置已保存！请重启容器以使所有更改（特别是 Cron）完全生效。', 'success')
+            flash('配置已保存！请重启容器以使更改生效。', 'success')
             return redirect(url_for('index'))
             
         elif action == 'backup':
             subprocess.Popen(["/usr/local/bin/backup.sh"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-            flash('备份任务已在后台启动，请查看日志。', 'info')
+            flash('备份任务已在后台启动。', 'info')
             
         elif action == 'restore_latest':
             subprocess.Popen(["/usr/local/bin/restore.sh", "latest"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-            flash('还原任务(Latest)已启动，这可能需要几分钟，请关注日志。', 'warning')
+            flash('还原任务已启动。', 'warning')
 
     logs = ""
     if os.path.exists(LOG_FILE):
