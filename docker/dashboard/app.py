@@ -14,8 +14,9 @@ DASHBOARD_USER = os.environ.get("DASHBOARD_USER", "admin")
 DASHBOARD_PASSWORD = os.environ.get("DASHBOARD_PASSWORD", "admin")
 
 # 需要在面板中管理的变量
+# 【注意】已移除 RCLONE_CONF_BASE64，交由系统环境变量接管
 MANAGED_KEYS = [
-    "RCLONE_REMOTE", "RCLONE_CONF_BASE64", "BACKUP_CRON", 
+    "RCLONE_REMOTE", "BACKUP_CRON", 
     "BACKUP_FILENAME_PREFIX", "BACKUP_COMPRESSION", 
     "TELEGRAM_ENABLED", "TELEGRAM_BOT_TOKEN", "TELEGRAM_CHAT_ID",
     "RETENTION_MODE", "BACKUP_RETAIN_DAYS", "BACKUP_RETAIN_COUNT"
@@ -34,26 +35,14 @@ def load_env_file():
     return env_vars
 
 def save_env_file(form_data):
-    """保存配置：空值处理策略"""
+    """保存配置"""
     lines = []
     for key in MANAGED_KEYS:
         new_val = form_data.get(key)
-        
-        # --- 核心修复：RCLONE_CONF_BASE64 ---
-        if key == "RCLONE_CONF_BASE64":
-            # 只有当用户真的填了新内容时，才写入文件
-            if new_val and new_val.strip():
-                safe_val = new_val.strip().replace('"', '\\"')
-                lines.append(f'{key}="{safe_val}"')
-            # 如果用户留空，则【跳过】不写入。
-            # 这样文件里就没有这个 key，系统会自动 fallback 使用环境变量。
-            
-        # --- 其他字段 ---
-        else:
-            # 其他字段允许写入空值（比如清空 Telegram Token）
-            val = new_val if new_val is not None else ""
-            safe_val = val.replace('"', '\\"')
-            lines.append(f'{key}="{safe_val}"')
+        # 允许写入空值，并进行转义
+        val = new_val if new_val is not None else ""
+        safe_val = val.replace('"', '\\"')
+        lines.append(f'{key}="{safe_val}"')
     
     with open(CONF_FILE, 'w') as f:
         f.write("\n".join(lines) + "\n")
@@ -62,16 +51,19 @@ def get_remote_files():
     # 获取 Remote 地址：优先文件，其次环境
     file_vars = load_env_file()
     remote = file_vars.get("RCLONE_REMOTE")
-    if remote is None: # 文件中没有
+    if not remote: 
         remote = os.environ.get("RCLONE_REMOTE", "")
         
     if not remote:
         return []
     try:
+        # 获取 JSON 格式的文件列表
         cmd = ["rclone", "lsjson", remote, "--files-only", "--no-mimetype"]
         result = subprocess.check_output(cmd, timeout=15)
         files = json.loads(result)
+        # 按时间倒序排列
         files.sort(key=lambda x: x.get("ModTime", ""), reverse=True)
+        # 格式化大小
         for f in files:
             size = f.get("Size", 0)
             f["SizeHuman"] = f"{size / 1024 / 1024:.2f} MB"
@@ -101,10 +93,9 @@ def download_file(filename):
     if not session.get('logged_in'):
         return redirect(url_for('login'))
     
-    # 逻辑同 get_remote_files
     file_vars = load_env_file()
     remote = file_vars.get("RCLONE_REMOTE")
-    if remote is None:
+    if not remote:
         remote = os.environ.get("RCLONE_REMOTE", "")
 
     if not remote:
@@ -179,16 +170,13 @@ def index():
     for key in MANAGED_KEYS:
         # 1. 尝试从文件获取
         val = file_vars.get(key)
-        
-        # 2. 如果文件中没有这个key（或者对于Base64来说，如果值是空字符串也视为没有），则使用环境变量
+        # 2. 如果文件中没有，则使用环境变量
         if val is None:
             val = os.environ.get(key, "")
-        
-        # 特殊处理：Base64 如果文件里存的是空字符串，也回退到环境变量
-        if key == "RCLONE_CONF_BASE64" and val == "":
-             val = os.environ.get(key, "")
-             
         current_vars[key] = val
+
+    # 检查是否配置了 Config Base64 (仅用于前端显示状态)
+    has_rclone_conf = "RCLONE_CONF_BASE64" in os.environ and len(os.environ["RCLONE_CONF_BASE64"]) > 10
 
     if request.method == 'POST':
         action = request.form.get('action')
@@ -215,7 +203,7 @@ def index():
             
     remote_files = get_remote_files()
 
-    return render_template('index.html', login_page=False, config=current_vars, logs=logs, remote_files=remote_files)
+    return render_template('index.html', login_page=False, config=current_vars, logs=logs, remote_files=remote_files, has_rclone_conf=has_rclone_conf)
 
 if __name__ == '__main__':
     port = int(os.environ.get('DASHBOARD_PORT', 5277))
