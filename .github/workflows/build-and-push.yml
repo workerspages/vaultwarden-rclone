@@ -2,7 +2,7 @@ name: Build and Push Docker Image
 
 on:
   push:
-    branches: [ panel-2fa ]
+    branches: [ main ]
     tags: [ "v*" ]
   workflow_dispatch: {}
 
