@@ -1,5 +1,4 @@
-
-# 🔐 Vaultwarden Rclone Backup & Dashboard & 2FA
+# 🔐 Vaultwarden Extended (Rclone 备份版)
 
 ![Docker Image Size](https://img.shields.io/docker/image-size/workerspages/vaultwarden-rclone/latest)
 ![Docker Pulls](https://img.shields.io/docker/pulls/workerspages/vaultwarden-rclone)
