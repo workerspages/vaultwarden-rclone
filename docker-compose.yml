@@ -6,34 +6,33 @@ services:
     container_name: vaultwarden
     restart: always
     ports:
-      - "80:80"          # Vaultwarden 服务端口
-      - "5277:5277"      # Web 控制面板端口 (建议不要对公网开放)
+      - "80:80" # 唯一对外端口 (Vaultwarden + /bakweb 控制面板)
     environment:
       - TZ=Asia/Shanghai
-      
+
       # --- Web 面板初始凭证 ---
       - DASHBOARD_USER=admin
       - DASHBOARD_PASSWORD=你的强密码
-      
+
       # --- Rclone 配置 (必须在此设置) ---
       # 格式: <配置名称>:<路径>
       - RCLONE_REMOTE=my-drive:/vaultwarden_backup
       # 填入第 1 步生成的 Base64 字符串
       - RCLONE_CONF_BASE64=W2ppYW5ndW95dW4teXVueHpoXQp0eXBlID0gd2ViZGF2Cn...
-      
+
       # --- 备份策略 ---
-      - BACKUP_CRON=0 3 * * *         # 每天凌晨 3 点备份
-      - BACKUP_COMPRESSION=gz         # 压缩格式: gz (推荐), zst, xz
-      
+      - BACKUP_CRON=0 3 * * * # 每天凌晨 3 点备份
+      - BACKUP_COMPRESSION=gz # 压缩格式: gz (推荐), zst, xz
+
       # --- 保留策略 ---
-      - RETENTION_MODE=smart          # smart(智能), count(数量), days(天数)
-      - BACKUP_RETAIN_COUNT=30        # 仅在 count 模式生效
-      
+      - RETENTION_MODE=smart # smart(智能), count(数量), days(天数)
+      - BACKUP_RETAIN_COUNT=30 # 仅在 count 模式生效
+
       # --- 通知 (可选) ---
       - TELEGRAM_ENABLED=false
       - TELEGRAM_BOT_TOKEN=
       - TELEGRAM_CHAT_ID=
 
     volumes:
-      - ./vw-data:/data   # Vaultwarden 数据卷
-      - ./vw-conf:/conf   # 面板配置卷 (一定要挂载这个!)
+      - ./vw-data:/data # Vaultwarden 数据卷
+      - ./vw-conf:/conf # 面板配置卷 (一定要挂载这个!)

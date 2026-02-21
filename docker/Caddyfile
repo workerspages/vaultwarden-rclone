@@ -1,0 +1,11 @@
+:80 {
+    # Dashboard 反向代理 —— /bakweb 路径
+    handle_path /bakweb* {
+        reverse_proxy 127.0.0.1:5277
+    }
+
+    # 默认路由 —— Vaultwarden
+    handle {
+        reverse_proxy 127.0.0.1:8080
+    }
+}

@@ -14,7 +14,7 @@
 ## ✨ 核心特性
 
 *   🐳 **官方内核**：基于 `vaultwarden/server:latest` 构建，与官方版本完全同步。
-*   🖥️ **可视化面板**：内置独立管理后台 (端口 `5277`)，支持 2FA 双重验证。
+*   🖥️ **可视化面板**：内置独立管理后台 (通过 `/bakweb` 路径访问)，支持 2FA 双重验证。
 *   🧱 **双卷架构 (New)**：实现了数据 (`/data`) 与配置 (`/conf`) 的物理隔离。还原数据时不会丢失面板配置（如 2FA 密钥、Rclone 设置）。
 *   ☁️ **多云支持**：支持 Google Drive, OneDrive, S3, MinIO, WebDAV (坚果云) 等 40+ 种存储后端。
 *   🧠 **智能保留 (GFS)**：支持 Grandfather-Father-Son 策略（保留 7天/4周/12月），或简单的按数量/天数轮替。
@@ -71,8 +71,7 @@ services:
     container_name: vaultwarden
     restart: always
     ports:
-      - "80:80"          # Vaultwarden 服务端口
-      - "5277:5277"      # Web 控制面板端口 (建议不要对公网开放)
+      - "80:80"          # 唯一对外端口 (Vaultwarden + /bakweb 控制面板)
     environment:
       - TZ=Asia/Shanghai
       
@@ -114,7 +113,7 @@ docker-compose up -d
 ## 💻 使用指南
 
 ### 访问控制面板
-访问 `http://你的IP:5277`，使用环境变量中设置的账号密码登录。
+访问 `http://你的IP/bakweb`，使用环境变量中设置的账号密码登录。
 
 ### 启用 2FA (强烈推荐)
 1.  登录面板后，系统会提示“首次设置两步验证”。
@@ -136,7 +135,6 @@ docker-compose up -d
 
 | 变量名 | 默认值 | 说明 |
 | :--- | :--- | :--- |
-| `DASHBOARD_PORT` | `5277` | 面板端口 |
 | `DASHBOARD_USER` | `admin` | 面板登录用户名 |
 | `DASHBOARD_PASSWORD` | `admin` | 面板登录密码 |
 | `RCLONE_REMOTE` | - | **[必填]** 远程存储路径，如 `onedrive:/backup` |
@@ -177,7 +175,7 @@ cd vaultwarden-rclone
 docker build --no-cache -t vaultwarden-rclone -f docker/Dockerfile .
 
 # 3. 运行
-docker run -d --name vw -p 80:80 -p 5277:5277 \
+docker run -d --name vw -p 80:80 \
   -e RCLONE_REMOTE=... \
   -e RCLONE_CONF_BASE64=... \
   -v $(pwd)/vw-data:/data \

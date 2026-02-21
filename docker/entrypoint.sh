@@ -42,22 +42,25 @@ echo "🖥️  Starting Dashboard..."
 python3 /app/dashboard/app.py >> /var/log/dashboard.log 2>&1 &
 DASH_PID=$!
 
-# --- 5. 启动 Cloudflare Tunnel (可选) ---
+# --- 5. 启动 Caddy 反向代理 ---
+echo "🌐 Starting Caddy reverse proxy..."
+export ROCKET_PORT="${ROCKET_PORT:-8080}"
+caddy run --config /etc/caddy/Caddyfile >> /var/log/caddy.log 2>&1 &
+CADDY_PID=$!
+
+# --- 6. 启动 Cloudflare Tunnel (可选) ---
 if [[ -n "${CLOUDFLARED_TOKEN}" ]]; then
     echo "🚇 Starting Cloudflare Tunnel..."
-    # --no-autoupdate 因为容器是不可变的，更新应通过更新镜像完成
-    # protocol http2 提高稳定性
     cloudflared tunnel --no-autoupdate run --token "${CLOUDFLARED_TOKEN}" > "$TUNNEL_LOG" 2>&1 &
     TUNNEL_PID=$!
     echo "✅ Cloudflare Tunnel started (PID: $TUNNEL_PID). Logs at $TUNNEL_LOG"
 else
     echo "ℹ️  Cloudflare Tunnel token not set, skipping."
-    # 设为一个不存在的 PID 或空，避免 wait 报错
     TUNNEL_PID=""
 fi
 
-# --- 6. 启动 Vaultwarden ---
-echo "🚀 Starting Vaultwarden service..."
+# --- 7. 启动 Vaultwarden ---
+echo "🚀 Starting Vaultwarden service (internal port: ${ROCKET_PORT})..."
 exec_path="/start.sh"
 
 if [[ "${BACKUP_ENABLED:-true}" == "true" ]]; then
@@ -77,12 +80,11 @@ EOF
   
   echo "✅ Backup scheduler started."
   
-  # 等待任意核心进程退出 (Dashboard, Vaultwarden, Cron, Tunnel)
-  # 注意：如果 Tunnel 没启动，TUNNEL_PID 为空，wait 会忽略它
-  wait -n $SERVICE_PID $CRON_PID $DASH_PID $TUNNEL_PID
+  # 等待任意核心进程退出
+  wait -n $SERVICE_PID $CRON_PID $DASH_PID $CADDY_PID $TUNNEL_PID
   
 else
   "$exec_path" &
   SERVICE_PID=$!
-  wait -n $SERVICE_PID $DASH_PID $TUNNEL_PID
+  wait -n $SERVICE_PID $DASH_PID $CADDY_PID $TUNNEL_PID
 fi

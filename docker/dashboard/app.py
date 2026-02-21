@@ -6,10 +6,12 @@ import qrcode
 import io
 import base64
 from werkzeug.utils import secure_filename
+from werkzeug.middleware.dispatcher import DispatcherMiddleware
 from flask import Flask, render_template, request, redirect, url_for, session, flash, send_file, after_this_request
 
 app = Flask(__name__)
 app.secret_key = os.urandom(24)
+app.config['APPLICATION_ROOT'] = '/bakweb'
 
 CONF_FILE = "/conf/env.conf"
 LOG_FILE = "/conf/backup.log"
@@ -60,7 +62,6 @@ def get_2fa_secret():
     if not secret: secret = os.environ.get("DASHBOARD_2FA_SECRET", "")
     return secret
 
-# ... (get_remote_files, generate_qr_base64 等 Helper 函数保持不变) ...
 def get_remote_files():
     file_vars = load_env_file()
     remote = file_vars.get("RCLONE_REMOTE")
@@ -85,7 +86,6 @@ def generate_qr_base64(uri):
     img.save(buf, format="PNG")
     return base64.b64encode(buf.getvalue()).decode("utf-8")
 
-# ... (Login, 2FA verify 保持不变) ...
 @app.route('/login', methods=['GET', 'POST'])
 def login():
     if request.method == 'POST':
@@ -225,5 +225,11 @@ def index():
     return render_template('index.html', page='dashboard', config=current_vars, logs=logs, remote_files=remote_files, has_rclone_conf=has_rclone_conf, has_2fa=has_2fa, has_tunnel=has_tunnel)
 
 if __name__ == '__main__':
-    port = int(os.environ.get('DASHBOARD_PORT', 5277))
-    app.run(host='0.0.0.0', port=port)
+    from werkzeug.serving import run_simple
+
+    # 将 Flask 应用挂载到 /bakweb 子路径
+    application = DispatcherMiddleware(
+        Flask('dummy'),  # 根路径占位（由 Caddy 反代到 Vaultwarden）
+        {'/bakweb': app}
+    )
+    run_simple('0.0.0.0', 5277, application, use_reloader=False)

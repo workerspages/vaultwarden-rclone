@@ -35,7 +35,7 @@
     <div class="card login-card shadow">
         <div class="card-header bg-primary text-white">🔐 登录控制台</div>
         <div class="card-body">
-            <form method="POST" action="/login">
+            <form method="POST" action="{{ url_for('login') }}">
                 <div class="mb-3"><label>用户名</label><input type="text" name="username" class="form-control" required></div>
                 <div class="mb-3"><label>密码</label><input type="password" name="password" class="form-control" required></div>
                 <button type="submit" class="btn btn-primary w-100">下一步</button>
@@ -51,7 +51,7 @@
             <p class="small text-muted">请使用 Authenticator 扫描下方二维码。</p>
             <img src="data:image/png;base64,{{ qr_code }}" class="img-fluid mb-3" style="max-width: 200px;">
             <p class="small mb-1">手动密钥：</p><code class="d-block mb-3 bg-light p-2 user-select-all">{{ secret }}</code>
-            <form method="POST" action="/verify_2fa">
+            <form method="POST" action="{{ url_for('verify_2fa') }}">
                 <div class="input-group mb-3">
                     <input type="text" name="code" class="form-control text-center" placeholder="6 位验证码" required>
                     <button type="submit" class="btn btn-success">启用</button>
@@ -65,11 +65,11 @@
     <div class="card login-card shadow">
         <div class="card-header bg-success text-white">🛡️ 两步验证</div>
         <div class="card-body text-center">
-            <form method="POST" action="/verify_2fa">
+            <form method="POST" action="{{ url_for('verify_2fa') }}">
                 <div class="mb-3"><input type="text" name="code" class="form-control text-center fs-4" placeholder="000000" required autofocus></div>
                 <button type="submit" class="btn btn-success w-100">验证登录</button>
             </form>
-            <a href="/logout" class="btn btn-link btn-sm mt-3">取消</a>
+            <a href="{{ url_for('logout') }}" class="btn btn-link btn-sm mt-3">取消</a>
         </div>
     </div>
 </div>
@@ -88,7 +88,7 @@
             {% if has_2fa %}
             <span class="badge bg-success me-2">🛡️ 2FA 已开启</span>
             {% endif %}
-            <a href="/logout" class="btn btn-outline-light btn-sm">退出</a>
+            <a href="{{ url_for('logout') }}" class="btn btn-outline-light btn-sm">退出</a>
         </div>
     </div>
 </nav>
@@ -106,7 +106,7 @@
                     </form>
                     <hr>
                     <h6 class="mb-2">📥 本地上传还原</h6>
-                    <form action="/upload_restore" method="POST" enctype="multipart/form-data" class="input-group">
+                    <form action="{{ url_for('upload_restore') }}" method="POST" enctype="multipart/form-data" class="input-group">
                         <input type="file" name="file" class="form-control" required>
                         <button type="submit" class="btn btn-danger" onclick="return confirm('确定要还原此文件吗？')">还原</button>
                     </form>
@@ -127,7 +127,7 @@
             <div class="card shadow mb-4">
                 <div class="card-header bg-secondary text-white d-flex justify-content-between align-items-center">
                     <span>☁️ 云端备份文件</span>
-                    <a href="/" class="btn btn-sm btn-light py-0">刷新</a>
+                    <a href="{{ url_for('index') }}" class="btn btn-sm btn-light py-0">刷新</a>
                 </div>
                 <div class="card-body p-0">
                     {% if remote_files %}
@@ -143,8 +143,8 @@
                                     <td>{{ file.ModTime }}</td>
                                     <td>{{ file.SizeHuman }}</td>
                                     <td class="text-end">
-                                        <a href="/download/{{ file.Name }}" class="btn btn-xs btn-outline-primary" target="_blank">下载</a>
-                                        <form action="/restore_file" method="POST" style="display:inline-block;">
+                                        <a href="{{ url_for('download_file', filename=file.Name) }}" class="btn btn-xs btn-outline-primary" target="_blank">下载</a>
+                                        <form action="{{ url_for('restore_file') }}" method="POST" style="display:inline-block;">
                                             <input type="hidden" name="filename" value="{{ file.Name }}">
                                             <button type="submit" class="btn btn-xs btn-outline-danger" onclick="return confirm('确定还原？')">还原</button>
                                         </form>
