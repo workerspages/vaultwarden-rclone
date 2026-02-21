@@ -1,6 +1,7 @@
 FROM vaultwarden/server:latest
 
 ARG DEBIAN_FRONTEND=noninteractive
+ARG TARGETARCH
 ENV TZ=Asia/Shanghai
 
 # Rclone 需要升级修改最新版本号后重新部署
@@ -24,26 +25,25 @@ RUN set -eux; \
   rm -rf /var/lib/apt/lists/*; \
   \
   # --- Rclone 安装 ---
-  curl -fsSL -O "https://downloads.rclone.org/${RCLONE_VERSION}/rclone-${RCLONE_VERSION}-linux-amd64.zip"; \
-  unzip "rclone-${RCLONE_VERSION}-linux-amd64.zip"; \
-  mv "rclone-${RCLONE_VERSION}-linux-amd64/rclone" /usr/bin/rclone; \
+  curl -fsSL -O "https://downloads.rclone.org/${RCLONE_VERSION}/rclone-${RCLONE_VERSION}-linux-${TARGETARCH}.zip"; \
+  unzip "rclone-${RCLONE_VERSION}-linux-${TARGETARCH}.zip"; \
+  mv "rclone-${RCLONE_VERSION}-linux-${TARGETARCH}/rclone" /usr/bin/rclone; \
   chmod +x /usr/bin/rclone; \
-  rm -rf "rclone-${RCLONE_VERSION}-linux-amd64"* ; \
+  rm -rf "rclone-${RCLONE_VERSION}-linux-${TARGETARCH}"* ; \
   \
   # --- Supercronic 安装 ---
   SUPERCRONIC_VERSION=0.2.30; \
   curl -fsSL -o /usr/local/bin/supercronic \
-  "https://github.com/aptible/supercronic/releases/download/v${SUPERCRONIC_VERSION}/supercronic-linux-amd64"; \
+  "https://github.com/aptible/supercronic/releases/download/v${SUPERCRONIC_VERSION}/supercronic-linux-${TARGETARCH}"; \
   chmod +x /usr/local/bin/supercronic; \
   \
-  # --- Cloudflared 安装 (新增) ---
-  curl -L --output /usr/local/bin/cloudflared https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64; \
+  # --- Cloudflared 安装 ---
+  curl -L --output /usr/local/bin/cloudflared "https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-${TARGETARCH}"; \
   chmod +x /usr/local/bin/cloudflared; \
   \
   # --- Caddy 安装 ---
   CADDY_VERSION=2.9.1; \
-  CADDY_ARCH=$(dpkg --print-architecture); \
-  curl -fsSL -o /tmp/caddy.tar.gz "https://github.com/caddyserver/caddy/releases/download/v${CADDY_VERSION}/caddy_${CADDY_VERSION}_linux_${CADDY_ARCH}.tar.gz"; \
+  curl -fsSL -o /tmp/caddy.tar.gz "https://github.com/caddyserver/caddy/releases/download/v${CADDY_VERSION}/caddy_${CADDY_VERSION}_linux_${TARGETARCH}.tar.gz"; \
   tar -xzf /tmp/caddy.tar.gz -C /usr/local/bin caddy; \
   chmod +x /usr/local/bin/caddy; \
   rm -f /tmp/caddy.tar.gz; \
